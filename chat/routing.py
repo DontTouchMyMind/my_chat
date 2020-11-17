@@ -5,6 +5,6 @@ from .consumers import ChatConsumer, AsyncChatConsumer, BaseSyncConsumer, BaseAs
 
 websocket_urlpatterns = [
     url(r'^ws/chat/$', ChatAsyncJsonConsumer.as_asgi()),
-    url(r'^ws/chat/(?P<room_name>\w+)/$', AsyncChatConsumer.as_asgi()),
+    url(r'^ws/chat/(?P<room_name>\w+)/$', ChatConsumer.as_asgi()),
 
 ]

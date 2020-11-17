@@ -6,6 +6,8 @@ from channels.consumer import SyncConsumer, AsyncConsumer
 from channels.exceptions import StopConsumer
 from asgiref.sync import async_to_sync
 from channels.db import database_sync_to_async
+from channels.auth import login, logout
+from django.contrib.auth import get_user_model
 
 from chat.models import Online
 
@@ -13,6 +15,11 @@ from chat.models import Online
 class ChatConsumer(WebsocketConsumer):
 
     def connect(self):
+        user = get_user_model().objects.filter(email='admin@mail.com').first()
+        async_to_sync(login)(self.scope, user)  # login user
+        # async_to_sync(logout)(self.scope)         # logout user
+        # После операций с сессиями такими как login, ее необходимо сохранять!
+        # self.scope['session'].save()
         self.room_name = self.scope['url_route']['kwargs']['room_name']
         async_to_sync(self.channel_layer.group_add)(self.room_name, self.channel_name)
         self.accept()  # Метод для установки соединения.
@@ -33,6 +40,10 @@ class ChatConsumer(WebsocketConsumer):
         # self.send(text_data=json.dumps({
         #     'message': message
         # }))
+        print(self.scope['user'])
+        async_to_sync(logout)(self.scope)
+        self.scope['session'].save()
+        print(self.scope['user'])
         async_to_sync(self.channel_layer.group_send)(
             self.room_name,
             {
@@ -50,9 +61,14 @@ class AsyncChatConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         # await database_sync_to_async(self.create_online())()  # Если нет декоратора:
         await self.create_online()  # Если есть декоратор:
+        user = await self.get_user_from_db()
+        await login(self.scope, user)
+        await database_sync_to_async(self.scope['session'].save)()
         self.room_name = self.scope['url_route']['kwargs']['room_name']
         await self.channel_layer.group_add(self.room_name,
                                            self.channel_name)
+        self.scope['session']['my_var'] = 'hello string'
+        await database_sync_to_async(self.scope['session'].save)()
         await self.accept()
 
     async def disconnect(self, code):
@@ -61,12 +77,16 @@ class AsyncChatConsumer(AsyncWebsocketConsumer):
                                                self.channel_name)
 
     async def receive(self, text_data=None, bytes_data=None):
+        print(self.scope['user'])
+        await logout(self.scope)
+        await database_sync_to_async(self.scope['session'].save)()
+        print(self.scope['user'])
         await self.refresh_online()
         await self.channel_layer.group_send(
             self.room_name,
             {
                 'type': 'chat.message',
-                'text': self.online.name
+                'text': text_data
             }
         )
 
@@ -85,6 +105,10 @@ class AsyncChatConsumer(AsyncWebsocketConsumer):
     @database_sync_to_async
     def refresh_online(self):
         self.online.refresh_from_db()
+
+    @database_sync_to_async
+    def get_user_from_db(self):
+        return get_user_model().objects.filter(email='admin@mail.com').first()
 
 
 class BaseSyncConsumer(SyncConsumer):
